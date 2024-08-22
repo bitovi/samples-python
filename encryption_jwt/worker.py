@@ -1,6 +1,7 @@
 import asyncio
 import dataclasses
 import os
+import argparse
 
 import temporalio.converter
 from temporalio import workflow
@@ -13,10 +14,6 @@ from encryption_jwt.codec import EncryptionCodec
 temporal_address = "localhost:7233"
 if os.environ.get("TEMPORAL_ADDRESS"):
     temporal_address = os.environ["TEMPORAL_ADDRESS"]
-
-temporal_namespace = "default"
-if os.environ.get("TEMPORAL_NAMESPACE"):
-    temporal_namespace = os.environ["TEMPORAL_NAMESPACE"]
 
 temporal_tls_cert = None
 if os.environ.get("TEMPORAL_TLS_CERT"):
@@ -41,15 +38,15 @@ class GreetingWorkflow:
 interrupt_event = asyncio.Event()
 
 
-async def main():
+async def main(namespace: str):
     # Connect client
     client = await Client.connect(
         temporal_address,
         # Use the default converter, but change the codec
         data_converter=dataclasses.replace(
-            temporalio.converter.default(), payload_codec=EncryptionCodec()
+            temporalio.converter.default(), payload_codec=EncryptionCodec(namespace)
         ),
-        namespace=temporal_namespace,
+        namespace=namespace,
         tls=TLSConfig(
             client_cert=temporal_tls_cert,
             client_private_key=temporal_tls_key,
@@ -70,8 +67,11 @@ async def main():
 
 if __name__ == "__main__":
     loop = asyncio.new_event_loop()
+    parser = argparse.ArgumentParser(description="Run Temporal workflow with a specific namespace.")
+    parser.add_argument("namespace", type=str, help="The namespace to pass to the EncryptionCodec")
+    args = parser.parse_args()
     try:
-        loop.run_until_complete(main())
+        loop.run_until_complete(main(args.namespace))
     except KeyboardInterrupt:
         interrupt_event.set()
         loop.run_until_complete(loop.shutdown_asyncgens())

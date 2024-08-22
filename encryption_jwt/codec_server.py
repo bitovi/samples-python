@@ -1,8 +1,6 @@
 import os
 import ssl
 import logging
-from functools import partial
-from typing import Awaitable, Callable, Iterable, List
 import jwt
 import grpc
 from aiohttp import hdrs, web
@@ -14,11 +12,6 @@ from encryption_jwt.codec import EncryptionCodec
 
 
 DECRYPT_ROLES = ["admin"]
-
-
-temporal_namespace = "default"
-if os.environ.get("TEMPORAL_NAMESPACE"):
-    temporal_namespace = os.environ["TEMPORAL_NAMESPACE"]
 
 temporal_tls_cert = None
 if os.environ.get("TEMPORAL_TLS_CERT"):
@@ -78,42 +71,42 @@ def build_codec_server() -> web.Application:
 
             return ""
 
-    # General purpose payloads-to-payloads
-    async def apply(
-        fn: Callable[[Iterable[Payload]], Awaitable[List[Payload]]], req: web.Request
-    ) -> web.Response:
-        # Read payloads as JSON
-        assert req.content_type == "application/json"
-        payloads = json_format.Parse(await req.read(), Payloads())
+    def make_handler(fn: str):
+        async def handler(req: web.Request):
+            # Read payloads as JSON
+            assert req.content_type == "application/json"
+            payloads = json_format.Parse(await req.read(), Payloads())
 
-        # Extract the email from the JWT.
-        auth_header = req.headers.get("Authorization")
-        _bearer, encoded = auth_header.split(" ")
-        decoded = jwt.decode(encoded, options={"verify_signature": False})
+            # Extract the email from the JWT.
+            auth_header = req.headers.get("Authorization")
+            namespace = req.headers.get("x-namespace")
+            _bearer, encoded = auth_header.split(" ")
+            decoded = jwt.decode(encoded, options={"verify_signature": False})
 
-        # Use the email to determine if the payload should be decrypted.
-        role = request_user_role(
-            decoded["https://saas-api.tmprl.cloud/user/email"])
-        if role.lower() in DECRYPT_ROLES:
-            # `fn` = `code.encode` or `codec.decode`
-            payloads = Payloads(payloads=await fn(payloads.payloads))
+            # Use the email to determine if the payload should be decrypted.
+            role = request_user_role(
+                decoded["https://saas-api.tmprl.cloud/user/email"])
+            if role.lower() in DECRYPT_ROLES:
+                codec = EncryptionCodec(namespace)
+                payloads = Payloads(payloads=await codec[fn](payloads.payloads))
 
-        # Apply CORS and return JSON
-        resp = await cors_options(req)
-        resp.content_type = "application/json"
-        resp.text = json_format.MessageToJson(payloads)
-        return resp
+            # Apply CORS and return JSON
+            resp = await cors_options(req)
+            resp.content_type = "application/json"
+            resp.text = json_format.MessageToJson(payloads)
+            return resp
+        return handler
 
     # Build app
-    codec = EncryptionCodec()
+    # codec = EncryptionCodec(namespace)
     app = web.Application()
     # set up logger
     logging.basicConfig(level=logging.DEBUG)
     logger = logging.getLogger(__name__)
     app.add_routes(
         [
-            web.post("/encode", partial(apply, codec.encode)),
-            web.post("/decode", partial(apply, codec.decode)),
+            web.post("/encode", make_handler('encode')),
+            web.post("/decode",  make_handler('decode')),
             web.options("/decode", cors_options),
         ]
     )

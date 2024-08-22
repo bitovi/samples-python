@@ -5,13 +5,16 @@ from encryption_jwt.encryptor import KMSEncryptor
 
 
 class EncryptionCodec(PayloadCodec):
+    
+    def __init__(self, namespace: str):
+        self._encryptor = KMSEncryptor(namespace)
+
     async def encode(self, payloads: Iterable[Payload]) -> List[Payload]:
         # We blindly encode all payloads with the key and set the metadata with the key that was
         # used (base64 encoded).
-        encryptor = KMSEncryptor()
 
         def encrypt_payload(p: Payload):
-            data, key = encryptor.encrypt(p.SerializeToString())
+            data, key = self._encryptor.encrypt(p.SerializeToString())
             return Payload(
                 metadata={
                     "encoding": b"binary/encrypted",
@@ -23,11 +26,9 @@ class EncryptionCodec(PayloadCodec):
         return list(map(encrypt_payload, payloads))
 
     async def decode(self, payloads: Iterable[Payload]) -> List[Payload]:
-        encryptor = KMSEncryptor()
-
         def decrypt_payload(p: Payload):
             data_key_encrypted_base64 = p.metadata.get("data_key_encrypted", b"")
-            data = encryptor.decrypt(data_key_encrypted_base64, p.data)
+            data = self._encryptor.decrypt(data_key_encrypted_base64, p.data)
             return Payload.FromString(data)
 
         return list(map(decrypt_payload, payloads))
