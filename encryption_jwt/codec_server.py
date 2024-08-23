@@ -6,10 +6,9 @@ import grpc
 from aiohttp import hdrs, web
 
 from temporalio.api.common.v1 import Payload, Payloads
+from temporalio.api.cloud.cloudservice.v1 import request_response_pb2, service_pb2_grpc
 from google.protobuf import json_format
-from temporal.api.cloud.cloudservice.v1 import request_response_pb2, service_pb2_grpc
 from encryption_jwt.codec import EncryptionCodec
-
 
 DECRYPT_ROLES = ["admin"]
 
@@ -76,7 +75,7 @@ def build_codec_server() -> web.Application:
                 decoded["https://saas-api.tmprl.cloud/user/email"])
             if role.lower() in DECRYPT_ROLES:
                 codec = EncryptionCodec(namespace)
-                payloads = Payloads(payloads=await codec[fn](payloads.payloads))
+                payloads = Payloads(payloads=await  getattr(codec, fn)(payloads.payloads))
 
             # Apply CORS and return JSON
             resp = await cors_options(req)
