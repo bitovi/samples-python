@@ -6,6 +6,7 @@ import jwt
 import requests
 from aiohttp import hdrs, web
 from google.protobuf import json_format
+from jwt import PyJWK
 from jwt.algorithms import RSAAlgorithm
 from temporalio.api.cloud.cloudservice.v1 import GetUsersRequest
 from temporalio.api.common.v1 import Payloads
@@ -18,9 +19,9 @@ AUTHORIZED_NAMESPACE_ACCESS_ROLES = ["read", "write", "admin"]
 
 TEMPORAL_CLIENT_CLOUD_API_VERSION = "2024-05-13-00"
 
-temporal_ops_address = "saas-api.tmprl.cloud:443"
-if os.environ.get("TEMPORAL_OPS_ADDRESS"):
-    temporal_ops_address = os.environ.get("TEMPORAL_OPS_ADDRESS")
+temporal_ops_address = (
+    os.environ.get("TEMPORAL_OPS_ADDRESS") or "saas-api.tmprl.cloud:443"
+)
 
 
 def build_codec_server() -> web.Application:
@@ -76,8 +77,8 @@ def build_codec_server() -> web.Application:
 
     def make_handler(fn: str):
         async def handler(req: web.Request):
-            namespace = req.headers.get("x-namespace")
-            auth_header = req.headers.get("Authorization")
+            namespace = req.headers.get("x-namespace") or "default"
+            auth_header = req.headers.get("Authorization") or ""
             _bearer, encoded = auth_header.split(" ")
 
             # Extract the kid from the Auth header
@@ -90,20 +91,20 @@ def build_codec_server() -> web.Application:
             jwks = requests.get(jwks_url).json()
 
             # Extract Temporal Cloud's public key
-            public_key = None
+            pyjwk = None
             for key in jwks["keys"]:
                 if key["kid"] == kid:
                     # Convert JWKS key to PEM format
-                    public_key = RSAAlgorithm.from_jwk(key)
+                    pyjwk = PyJWK.from_dict(key)
                     break
 
-            if public_key is None:
+            if pyjwk is None:
                 raise ValueError("Public key not found in JWKS")
 
             # Decode the jwt, verifying against Temporal Cloud's public key
             decoded = jwt.decode(
                 encoded,
-                public_key,
+                pyjwk.key,
                 algorithms=[algorithm],
                 audience=[
                     "https://saas-api.tmprl.cloud",
@@ -156,7 +157,7 @@ if __name__ == "__main__":
         ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
         ssl_context.check_hostname = False
         ssl_context.load_cert_chain(
-            os.environ.get("SSL_PEM"), os.environ.get("SSL_KEY")
+            os.environ.get("SSL_PEM") or "", os.environ.get("SSL_KEY") or ""
         )
 
     web.run_app(
