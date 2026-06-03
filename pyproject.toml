@@ -32,11 +32,11 @@ dsl = [
 ]
 encryption = [
     "cryptography>=38.0.1,<39",
-    "aiohttp>=3.8.1,<4",
+    "aiohttp>=3.13.5,<4",
 ]
 encryption_jwt = [
     "cryptography>=38.0.1,<39",
-    "aiohttp>=3.8.1,<4",
+    "aiohttp>=3.13.5,<4",
     "pyjwt>=2.9.0,<3",
     "aioboto3>=13.1.1,<14",
     "requests>=2.32.3,<3",
